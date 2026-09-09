@@ -1,25 +1,12 @@
 // ===== API WRAPPER با پشتیبانی از چند سرویس =====
 (function () {
   // آدرس پایه اصلی سرور
+  // ⚠️ قبل از production حتماً به آدرس واقعی و https تغییر بده
   const API_BASE_URL = "http://localhost:8080";
 
   // تعریف مسیر هر سرویس (فقط path، بدون دامنه)
-  // مثال: API_BASE_URL + SERVICES.auth + "/login" => http://localhost:8080/auth/login
   const SERVICES = {
     profile: "/profile",
-    myReports: "/report/myReports",
-    newreports: "/reports",
-
-    // مسیرهای دارای شناسه
-    editereport: "/reports/{id}",
-    deletereports: "/reports/{id}",
-
-    myDepartments: "/myDepartments",
-    departments: "/departments",
-    testapi: "/reports/check",
-
-    // ===== سرویس احراز هویت =====
-    auth: "/auth",
   };
 
   window.API = {
@@ -67,29 +54,6 @@
       });
     },
 
-    put(service, endpoint, body, options = {}) {
-      return this.request(service, endpoint, {
-        ...options,
-        method: "PUT",
-        body: JSON.stringify(body),
-      });
-    },
-
-    delete(service, endpoint, options = {}) {
-      return this.request(service, endpoint, {
-        ...options,
-        method: "DELETE",
-      });
-    },
-
-    putAbsolute(url, body, options = {}) {
-      return this.requestAbsolute(url, {
-        ...options,
-        method: "PUT",
-        body: JSON.stringify(body),
-      });
-    },
-
     async requestAbsolute(url, options = {}) {
       const token = this.getToken();
 
@@ -112,83 +76,28 @@
         window.dispatchEvent(new CustomEvent("unauthorized"));
         throw new Error("جلسه شما منقضی شده است");
       }
+      if (response.status === 403) {
+        throw new Error("شما دسترسی به این بخش ندارید");
+      }
+      if (response.status === 404) {
+        throw new Error("منبع مورد نظر یافت نشد");
+      }
 
       return response;
     },
 
-    deleteAbsolute(url, options = {}) {
-      return this.requestAbsolute(url, {
-        ...options,
-        method: "DELETE",
-      });
-    },
-
-    // ===== متدهای راحت برای هر سرویس =====
-    reports: {
-      getAll: () => {
-        return window.API.get("myReports", "");
-      },
-      getOne: (id) => {
-        if (id === null || id === undefined || id === "") {
-          throw new Error("شناسه گزارش برای دریافت جزئیات مشخص نشده است");
-        }
-        const endpoint = SERVICES.editereport.replace(
-          "{id}",
-          encodeURIComponent(id),
-        );
-        const url = `${API_BASE_URL}${endpoint}`;
-        return window.API.requestAbsolute(url, { method: "GET" });
-      },
-      create: (data) => {
-        return window.API.post("newreports", "", data);
-      },
-      update: (id, data) => {
-        if (id === null || id === undefined || id === "") {
-          throw new Error("شناسه گزارش برای ویرایش مشخص نشده است");
-        }
-        const endpoint = SERVICES.editereport.replace(
-          "{id}",
-          encodeURIComponent(id),
-        );
-        const url = `${API_BASE_URL}${endpoint}`;
-        return window.API.putAbsolute(url, data);
-      },
-      delete: (id) => {
-        if (id === null || id === undefined || id === "") {
-          throw new Error("شناسه گزارش برای حذف مشخص نشده است");
-        }
-        const endpoint = SERVICES.deletereports.replace(
-          "{id}",
-          encodeURIComponent(id),
-        );
-        const url = `${API_BASE_URL}${endpoint}`;
-        return window.API.deleteAbsolute(url);
-      },
-    },
-
-    departments: {
-      getAll: () => window.API.get("departments", ""),
-      getOne: (id) => window.API.get("departments", `/${id}`),
-      create: (data) => window.API.post("departments", "", data),
-      update: (id, data) => window.API.put("departments", `/${id}`, data),
-      delete: (id) => window.API.delete("departments", `/${id}`),
-    },
-
     // ===== سرویس احراز هویت =====
-    // API.auth => API_BASE_URL + "/auth"
-    // مثال: window.API.auth.login(data) => POST /auth/login
-    auth: {
-      login: (data) => window.API.post("auth", "/login", data),
-      register: (data) => window.API.post("auth", "/register", data),
-      logout: () => window.API.post("auth", "/logout", {}),
-      profile: () => window.API.get("auth", "/profile"),
-    },
-
-    testapi: {
-      check: () => window.API.get("testapi", ""),
+    // توجه: ثبت‌نام (register) عمداً حذف شده چون طبق نیازمندی،
+    // کاربران/مدیران حق ثبت‌نام یا ویرایش حساب خودشون رو ندارند
+    // و این عملیات فقط باید توسط ادمین و از طریق پنل ادمین انجام بشه.
+    profile: {
+      login: (data) => window.API.post("profile", "/login", data),
+      logout: () => window.API.post("profile", "/logout", {}),
+      getProfile: () => window.API.get("profile", "/profile"),
     },
   };
 })();
+
 // ===== تابع Parsing JWT =====
 function parseJwt(token) {
   try {
@@ -205,6 +114,40 @@ function parseJwt(token) {
     console.error("خطای JWT parsing:", error);
     return null;
   }
+}
+
+// ===== استخراج نقش کاربر از JWT =====
+// سازگار با فرمت استاندارد Spring Security که authorities به شکل
+// [{ authority: "ROLE_ADMIN" }] برمی‌گرده، و هم claim ساده‌ی "role"
+function extractUserRole(payload) {
+  if (!payload) return "USER";
+
+  let rawRole = "USER";
+
+  try {
+    if (payload.role) {
+      rawRole = payload.role;
+    } else if (payload.authorities) {
+      if (
+        Array.isArray(payload.authorities) &&
+        payload.authorities.length > 0
+      ) {
+        const first = payload.authorities[0];
+        rawRole = first?.authority || first || "USER";
+      } else if (typeof payload.authorities === "string") {
+        rawRole = payload.authorities;
+      } else if (payload.authorities.authority) {
+        rawRole = payload.authorities.authority;
+      }
+    }
+  } catch (error) {
+    console.error("❌ خطا در استخراج نقش:", error);
+    rawRole = "USER";
+  }
+
+  return String(rawRole)
+    .replace(/^ROLE_/, "")
+    .toUpperCase();
 }
 
 (function () {
@@ -265,6 +208,18 @@ function parseJwt(token) {
     return isValid;
   }
 
+  // نقشه مسیر هر نقش به پنل مربوطه (فقط با یک فرمت یکسان - حروف بزرگ)
+  const ROLE_ROUTES = {
+    ADMIN: "/admin-panel",
+    MANAGER: "/manager-panel",
+    USER: "/user-panel",
+  };
+  function setFormDisabled(disabled) {
+    if (usernameInput) usernameInput.disabled = disabled;
+    if (passwordInput) passwordInput.disabled = disabled;
+    if (loginBtn) loginBtn.disabled = disabled;
+  }
+
   // ===== ارسال فرم لاگین =====
   loginForm?.addEventListener("submit", async function (e) {
     e.preventDefault();
@@ -274,53 +229,107 @@ function parseJwt(token) {
       return;
     }
 
-    loginBtn.disabled = true;
-    loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> درحال ورود...';
+    setFormDisabled(true);
+    if (loginBtn) {
+      loginBtn.innerHTML =
+        '<i class="fas fa-spinner fa-spin"></i> درحال ورود...';
+    }
+
+    const loginData = {
+      username: usernameInput.value.trim(),
+      password: passwordInput.value.trim(),
+    };
+
+    let response;
+    try {
+      response = await window.API.profile.login(loginData);
+    } catch (networkError) {
+      // خطای شبکه (مثلاً سرور در دسترس نیست)
+      console.error("❌ خطای شبکه:", networkError);
+      showToastMessage(
+        "خطا در ارتباط با سرور. لطفاً اتصال اینترنت خود را بررسی کنید.",
+        true,
+      );
+      setFormDisabled(false);
+      if (loginBtn) loginBtn.innerHTML = "ورود";
+      return;
+    }
 
     try {
-      const loginData = {
-        username: usernameInput.value.trim(),
-        password: passwordInput.value.trim(),
-      };
-
-      const response = await window.API.auth.login(loginData);
-
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || `خطا: ${response.status}`);
+        let errorData = {};
+        try {
+          errorData = await response.json();
+        } catch {
+          // بدنه پاسخ JSON نبود، از پیام پیش‌فرض استفاده می‌کنیم
+        }
+
+        // مدیریت خطاهای خاص بر اساس status code
+        if (response.status === 401) {
+          throw new Error("نام کاربری یا رمز عبور اشتباه است");
+        } else if (response.status === 403) {
+          throw new Error("حساب کاربری شما مسدود شده است");
+        } else if (response.status === 429) {
+          throw new Error("تعداد درخواست‌های شما بیش از حد مجاز است");
+        } else {
+          throw new Error(errorData.message || `خطا: ${response.status}`);
+        }
       }
 
       const data = await response.json();
 
-      if (data.token) {
-        window.API.setToken(data.token);
-        document.cookie = `authToken=${data.token};path=/;SameSite=Lax;max-age=7200`;
-        // استخراج نقش از jwt
-        const payload = parseJwt(data.token);
-        const userRole = payload?.role || payload?.authorities?.[0] || "user";
-        console.log("نقش کاربر", userRole);
-        showToastMessage("ورود موفق ✅", false);
-        setTimeout(() => {
-          const roleRoutes = {
-            admin: "/admin-panel",
-            manager: "/manager-panel",
-            user: "/user-panel",
-            ADMIN: "/admin",
-            MANAGER: "/management",
-            USER: "/user",
-          };
-          const redirectUrl = roleRoutes[userRole] || "/dashboard";
-          window.location.replace(redirectUrl);
-        }, 1500);
-      } else {
+      if (!data.token) {
         throw new Error("توکن یافت نشد");
       }
+
+      window.API.setToken(data.token);
+      // یادآوری: در سمت Spring Boot ترجیحاً از HttpOnly + Secure cookie
+      // برای نگهداری توکن استفاده کنید تا در برابر XSS ایمن‌تر باشد.
+      document.cookie = `authToken=${data.token};path=/;SameSite=Lax;max-age=7200`;
+
+      // ===== کد جدید =====
+      const payload = parseJwt(data.token);
+      const userRole = extractUserRole(payload);
+
+      showToastMessage("ورود موفق ✅", false);
+
+      setTimeout(() => {
+        // 1. نرمال‌سازی نقش به حروف بزرگ
+        const normalizedRole = userRole.toUpperCase();
+
+        // 2. پیدا کردن مسیر مربوط به نقش
+        const redirectUrl = ROLE_ROUTES[normalizedRole];
+
+        // 3. اگر نقش معتبر بود → به پنل برو
+        if (redirectUrl) {
+          window.location.replace(redirectUrl);
+        }
+        // 4. اگر نقش نامعتبر بود → توکن را پاک کن و به لاگین برگرد
+        else {
+          // پاک کردن توکن از localStorage
+          window.API.clearToken();
+
+          // پاک کردن توکن از کوکی
+          document.cookie =
+            "authToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+
+          // نمایش پیام خطا به کاربر
+          showToastMessage(
+            "نقش کاربری نامعتبر است. لطفاً دوباره وارد شوید.",
+            true,
+          );
+
+          // بعد از ۱.۵ ثانیه به صفحه لاگین برگرد
+          setTimeout(() => {
+            window.location.replace("/login");
+          }, 1500);
+        }
+      }, 1500);
     } catch (error) {
       console.error("❌ خطای لاگین:", error);
       showToastMessage(error.message || "خطای نامشخص در لاگین", true);
-    } finally {
-      loginBtn.disabled = false;
-      loginBtn.innerHTML = "ورود";
+      setFormDisabled(false);
+      setFormDisabled(false);
     }
   });
 
@@ -333,6 +342,7 @@ function showToastMessage(msg, isError = false) {
   if (!toast) return;
 
   const toastMessage = document.getElementById("toastMessage");
+  if (!toastMessage) return;
   toastMessage.textContent = msg;
 
   toast.className = "toast show" + (isError ? " error" : "");
@@ -343,47 +353,51 @@ function showToastMessage(msg, isError = false) {
   }, 4000);
 }
 
-// ===== مدیریت نشست (Session Management) =====
+
 (function () {
-  const SESSION_DURATION = 2 * 60 * 60 * 1000; // ۲ ساعت
   let sessionTimer = null;
-  let warningTimer = null;
 
-  function startSessionTimer() {
-    clearTimeout(sessionTimer);
-    clearTimeout(warningTimer);
-
-    sessionTimer = setTimeout(() => {
-      window.API.clearToken();
-      document.cookie =
-        "authToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
-      window.dispatchEvent(new CustomEvent("unauthorized"));
-      showToastMessage("⏰ مدت زمان جلسه شما به پایان رسید.", true);
-      setTimeout(() => {
-        window.location.replace("/login");
-      }, 1500);
-    }, SESSION_DURATION);
-  }
-
-  function resetSessionTimer() {
-    const token = window.API.getToken();
-    if (token) {
-      startSessionTimer();
+  function getTokenExpiryMs(token) {
+    try {
+      const payload = parseJwt(token);
+      if (!payload || typeof payload.exp !== "number") return null;
+      return payload.exp * 1000;
+    } catch {
+      return null;
     }
   }
 
-  const activityEvents = [
-    "click",
-    "keydown",
-    "scroll",
-    "mousemove",
-    "touchstart",
-    "keyup",
-  ];
-  activityEvents.forEach((event) => {
-    document.addEventListener(event, resetSessionTimer);
-  });
+  function logoutDueToExpiry() {
+    window.API.clearToken();
+    document.cookie =
+      "authToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+    window.dispatchEvent(new CustomEvent("unauthorized"));
+    showToastMessage("⏰ مدت زمان جلسه شما به پایان رسید.", true);
+    setTimeout(() => {
+      window.location.replace("/login");
+    }, 1500);
+  }
 
+  function startSessionTimer() {
+    clearTimeout(sessionTimer);
+
+    const token = window.API.getToken();
+    if (!token) return;
+
+    const expiresAt = getTokenExpiryMs(token);
+
+    // اگر توکن claim انقضا نداشت، fallback به ۲ ساعت از الان
+    const remaining = expiresAt ? expiresAt - Date.now() : 2 * 60 * 60 * 1000;
+
+    if (remaining <= 0) {
+      logoutDueToExpiry();
+      return;
+    }
+
+    sessionTimer = setTimeout(logoutDueToExpiry, remaining);
+  }
+
+  // اتصال به چرخه‌ی عمر توکن: هر وقت توکن ست یا پاک شد، تایمر به‌روز بشه
   const originalSetToken = window.API.setToken;
   window.API.setToken = function (token) {
     originalSetToken.call(this, token);
@@ -397,21 +411,27 @@ function showToastMessage(msg, isError = false) {
     originalClearToken.call(this);
     document.cookie =
       "authToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
-
     clearTimeout(sessionTimer);
-    clearTimeout(warningTimer);
   };
 
+  // در صورت رفرش صفحه، زمان باقی‌مانده واقعی از exp محاسبه می‌شه
+  // (نه ۲ ساعت کامل جدید)
   if (window.API.getToken()) {
     startSessionTimer();
   }
 
   window.addEventListener("unauthorized", function () {
     window.API.clearToken();
-    // حذف کوکی
     document.cookie =
       "authToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
-    sessionStorage.clear(); // ✅ پاک کردن داده‌های جلسه
+
+    // فقط کلیدهای مرتبط با auth پاک بشه، نه کل sessionStorage
+    // (در صورت نیاز کلیدهای دیگه‌ای رو اینجا اضافه کنید)
+    // پاک کردن همه کلیدهای مرتبط با احراز هویت
+    const authKeys = ["authState", "userData", "userRole"];
+    authKeys.forEach((key) => sessionStorage.removeItem(key));
+    // یا اگر می‌خواهید همه چیز پاک شود:
+    sessionStorage.clear();
 
     showToastMessage("جلسه شما منقضی شد. لطفاً دوباره وارد شوید.", true);
     setTimeout(() => {
@@ -419,5 +439,5 @@ function showToastMessage(msg, isError = false) {
     }, 1500);
   });
 
-  console.log("✅ مدیریت نشست فعال شد (۲ ساعت)");
+  console.log("✅ مدیریت نشست فعال شد (مبتنی بر exp توکن)");
 })();
