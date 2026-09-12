@@ -217,7 +217,7 @@ function extractUserRole(payload) {
   const ROLE_ROUTES = {
     ADMIN: "/admin-panel",
     MANAGER: "/manager-panel",
-    USER: "/user-panel",
+    USER: "/user",
   };
   function setFormDisabled(disabled) {
     if (usernameInput) usernameInput.disabled = disabled;
