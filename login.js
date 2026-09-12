@@ -6,7 +6,7 @@
 
   // تعریف مسیر هر سرویس (فقط path، بدون دامنه)
   const SERVICES = {
-    profile: "/profile",
+    profile: "/login",
   };
 
   window.API = {
