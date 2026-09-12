@@ -14,15 +14,15 @@
     SERVICES: SERVICES,
 
     getToken() {
-      return localStorage.getItem("authToken") || null;
+      return localStorage.getItem("token") || null;
     },
 
     setToken(token) {
-      localStorage.setItem("authToken", token);
+      localStorage.setItem("token", token);
     },
 
     clearToken() {
-      localStorage.removeItem("authToken");
+      localStorage.removeItem("token");
     },
 
     // ساخت آدرس کامل از روی نام سرویس + endpoint
@@ -290,7 +290,7 @@ function extractUserRole(payload) {
       window.API.setToken(data.token);
       // یادآوری: در سمت Spring Boot ترجیحاً از HttpOnly + Secure cookie
       // برای نگهداری توکن استفاده کنید تا در برابر XSS ایمن‌تر باشد.
-      document.cookie = `authToken=${data.token};path=/;SameSite=Lax;max-age=7200`;
+      document.cookie = `token=${data.token};path=/;SameSite=Lax;max-age=7200`;
 
       // ===== کد جدید =====
       const payload = parseJwt(data.token);
@@ -316,7 +316,7 @@ function extractUserRole(payload) {
 
           // پاک کردن توکن از کوکی
           document.cookie =
-            "authToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+            "token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
 
           // نمایش پیام خطا به کاربر
           showToastMessage(
@@ -375,7 +375,7 @@ function showToastMessage(msg, isError = false) {
   function logoutDueToExpiry() {
     window.API.clearToken();
     document.cookie =
-      "authToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+      "token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
     window.dispatchEvent(new CustomEvent("unauthorized"));
     showToastMessage("⏰ مدت زمان جلسه شما به پایان رسید.", true);
     setTimeout(() => {
@@ -415,7 +415,7 @@ function showToastMessage(msg, isError = false) {
   window.API.clearToken = function () {
     originalClearToken.call(this);
     document.cookie =
-      "authToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+      "token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
     clearTimeout(sessionTimer);
   };
 
@@ -428,7 +428,7 @@ function showToastMessage(msg, isError = false) {
   window.addEventListener("unauthorized", function () {
     window.API.clearToken();
     document.cookie =
-      "authToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+      "token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
 
     // فقط کلیدهای مرتبط با auth پاک بشه، نه کل sessionStorage
     // (در صورت نیاز کلیدهای دیگه‌ای رو اینجا اضافه کنید)
