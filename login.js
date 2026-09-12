@@ -55,36 +55,41 @@
     },
 
     async requestAbsolute(url, options = {}) {
-      const token = this.getToken();
+  const token = this.getToken();
 
-      const headers = {
-        "Content-Type": "application/json",
-        ...options.headers,
-      };
+  const headers = {
+    "Content-Type": "application/json",
+    ...options.headers,
+  };
 
-      if (token) {
-        headers.Authorization = `Bearer ${token}`;
-      }
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
 
-      const response = await fetch(url, {
-        ...options,
-        headers,
-      });
+  const response = await fetch(url, {
+    ...options,
+    headers,
+  });
 
-      if (response.status === 401) {
-        this.clearToken();
-        window.dispatchEvent(new CustomEvent("unauthorized"));
-        throw new Error("جلسه شما منقضی شده است");
-      }
-      if (response.status === 403) {
-        throw new Error("شما دسترسی به این بخش ندارید");
-      }
-      if (response.status === 404) {
-        throw new Error("منبع مورد نظر یافت نشد");
-      }
+  // 401 مربوط به لاگین، انقضای جلسه نیست
+  const isLoginRequest = url.endsWith("/profile/login");
 
-      return response;
-    },
+  if (response.status === 401 && !isLoginRequest) {
+    this.clearToken();
+    window.dispatchEvent(new CustomEvent("unauthorized"));
+    throw new Error("جلسه شما منقضی شده است");
+  }
+
+  if (response.status === 403) {
+    throw new Error("شما دسترسی به این بخش را ندارید");
+  }
+
+  if (response.status === 404) {
+    throw new Error("منبع مورد نظر یافت نشد");
+  }
+
+  return response;
+},
 
     // ===== سرویس احراز هویت =====
     // توجه: ثبت‌نام (register) عمداً حذف شده چون طبق نیازمندی،
