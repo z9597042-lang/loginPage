@@ -72,7 +72,7 @@
   });
 
   // 401 مربوط به لاگین، انقضای جلسه نیست
-  const isLoginRequest = url.endsWith("/profile/login");
+  const isLoginRequest = url.endsWith("/login");
 
   if (response.status === 401 && !isLoginRequest) {
     this.clearToken();
@@ -288,48 +288,52 @@ function extractUserRole(payload) {
       }
 
       window.API.setToken(data.token);
-      // یادآوری: در سمت Spring Boot ترجیحاً از HttpOnly + Secure cookie
-      // برای نگهداری توکن استفاده کنید تا در برابر XSS ایمن‌تر باشد.
-      document.cookie = `token=${data.token};path=/;SameSite=Lax;max-age=7200`;
+document.cookie = `token=${data.token};path=/;SameSite=Lax;max-age=7200`;
 
-      // ===== کد جدید =====
-      const payload = parseJwt(data.token);
-      const userRole = extractUserRole(payload);
+// به‌جای decode محلی JWT، نقش رو از بک می‌گیریم
+let profileResponse;
+try {
+  profileResponse = await window.API.profile.getProfile();
+} catch (err) {
+  showToastMessage("خطا در دریافت اطلاعات کاربر", true);
+  window.API.clearToken();
+  document.cookie =
+    "token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+  setFormDisabled(false);
+  if (loginBtn) loginBtn.innerHTML = "ورود";
+  return;
+}
 
-      showToastMessage("ورود موفق ✅", false);
+if (!profileResponse.ok) {
+  showToastMessage("دسترسی به پروفایل کاربر ممکن نشد", true);
+  window.API.clearToken();
+  document.cookie =
+    "token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+  setFormDisabled(false);
+  if (loginBtn) loginBtn.innerHTML = "ورود";
+  return;
+}
 
-      setTimeout(() => {
-        // 1. نرمال‌سازی نقش به حروف بزرگ
-        const normalizedRole = userRole.toUpperCase();
+const profile = await profileResponse.json();
+const userRole = String(profile.role || "USER").toUpperCase();
 
-        // 2. پیدا کردن مسیر مربوط به نقش
-        const redirectUrl = ROLE_ROUTES[normalizedRole];
+showToastMessage("ورود موفق ✅", false);
 
-        // 3. اگر نقش معتبر بود → به پنل برو
-        if (redirectUrl) {
-          window.location.replace(redirectUrl);
-        }
-        // 4. اگر نقش نامعتبر بود → توکن را پاک کن و به لاگین برگرد
-        else {
-          // پاک کردن توکن از localStorage
-          window.API.clearToken();
+setTimeout(() => {
+  const redirectUrl = ROLE_ROUTES[userRole];
 
-          // پاک کردن توکن از کوکی
-          document.cookie =
-            "token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
-
-          // نمایش پیام خطا به کاربر
-          showToastMessage(
-            "نقش کاربری نامعتبر است. لطفاً دوباره وارد شوید.",
-            true,
-          );
-
-          // بعد از ۱.۵ ثانیه به صفحه لاگین برگرد
-          setTimeout(() => {
-            window.location.replace("/login");
-          }, 1500);
-        }
-      }, 1500);
+  if (redirectUrl) {
+    window.location.replace(redirectUrl);
+  } else {
+    window.API.clearToken();
+    document.cookie =
+      "token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+    showToastMessage("نقش کاربری نامعتبر است. لطفاً دوباره وارد شوید.", true);
+    setTimeout(() => {
+      window.location.replace("/login");
+    }, 1500);
+  }
+}, 1500);
     } catch (error) {
       console.error("❌ خطای لاگین:", error);
       showToastMessage(error.message || "خطای نامشخص در لاگین", true);
