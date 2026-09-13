@@ -55,41 +55,49 @@
     },
 
     async requestAbsolute(url, options = {}) {
-  const token = this.getToken();
+      console.log("API FILE VERSION 123");
+      console.log("requestAbsolute اجرا شد:", url);
 
-  const headers = {
-    "Content-Type": "application/json",
-    ...options.headers,
-  };
+      const token = this.getToken();
 
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
+      const headers = {
+        "Content-Type": "application/json",
+        ...options.headers,
+      };
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+      console.log("URL:", url);
+      console.log("Authorization:", headers.Authorization);
+      console.log("آدرس درخواست:", url);
+      console.log("توکن داخل requestAbsolute:", token);
+      console.log("Authorization:", headers.Authorization);
 
-  // 401 مربوط به لاگین، انقضای جلسه نیست
-  const isLoginRequest = url.endsWith("/login");
+      const response = await fetch(url, {
+        ...options,
+        headers,
+      });
 
-  if (response.status === 401 && !isLoginRequest) {
-    this.clearToken();
-    window.dispatchEvent(new CustomEvent("unauthorized"));
-    throw new Error("جلسه شما منقضی شده است");
-  }
+      // 401 مربوط به لاگین، انقضای جلسه نیست
+      const isLoginRequest = url.endsWith("/login");
 
-  if (response.status === 403) {
-    throw new Error("شما دسترسی به این بخش را ندارید");
-  }
+      if (response.status === 401 && !isLoginRequest) {
+        this.clearToken();
+        window.dispatchEvent(new CustomEvent("unauthorized"));
+        throw new Error("جلسه شما منقضی شده است");
+      }
 
-  if (response.status === 404) {
-    throw new Error("منبع مورد نظر یافت نشد");
-  }
+      if (response.status === 403) {
+        throw new Error("شما دسترسی به این بخش را ندارید");
+      }
 
-  return response;
-},
+      if (response.status === 404) {
+        throw new Error("منبع مورد نظر یافت نشد");
+      }
+
+      return response;
+    },
 
     // ===== سرویس احراز هویت =====
     // توجه: ثبت‌نام (register) عمداً حذف شده چون طبق نیازمندی،
@@ -283,57 +291,77 @@ function extractUserRole(payload) {
 
       const data = await response.json();
 
-      if (!data.token) {
+      console.log("پاسخ لاگین:", data);
+
+      // نام‌های رایج توکن را پشتیبانی می‌کنیم
+      const token =
+        data.token || data.accessToken || data.access_token || data.jwt;
+
+      if (!token) {
+        console.error("توکن در پاسخ لاگین وجود ندارد:", data);
         throw new Error("توکن یافت نشد");
       }
 
-      window.API.setToken(data.token);
-document.cookie = `token=${data.token};path=/;SameSite=Lax;max-age=7200`;
+      window.API.setToken(token);
 
-// به‌جای decode محلی JWT، نقش رو از بک می‌گیریم
-let profileResponse;
-try {
-  profileResponse = await window.API.profile.getProfile();
-} catch (err) {
-  showToastMessage("خطا در دریافت اطلاعات کاربر", true);
-  window.API.clearToken();
-  document.cookie =
-    "token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
-  setFormDisabled(false);
-  if (loginBtn) loginBtn.innerHTML = "ورود";
-  return;
-}
+      document.cookie = `token=${token};path=/;SameSite=Lax;max-age=7200`;
 
-if (!profileResponse.ok) {
-  showToastMessage("دسترسی به پروفایل کاربر ممکن نشد", true);
-  window.API.clearToken();
-  document.cookie =
-    "token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
-  setFormDisabled(false);
-  if (loginBtn) loginBtn.innerHTML = "ورود";
-  return;
-}
+      console.log("توکن ذخیره شد:", localStorage.getItem("token"));
 
-const profile = await profileResponse.json();
-const userRole = String(profile.role || "USER").toUpperCase();
+      // به‌جای decode محلی JWT، نقش را از بک می‌گیریم
+      let profileResponse;
 
-showToastMessage("ورود موفق ✅", false);
+      try {
+        console.log("در حال ارسال درخواست پروفایل...");
+        console.log("قبل از ارسال profile");
 
-setTimeout(() => {
-  const redirectUrl = ROLE_ROUTES[userRole];
+        profileResponse = await window.API.profile.getProfile();
 
-  if (redirectUrl) {
-    window.location.replace(redirectUrl);
-  } else {
-    window.API.clearToken();
-    document.cookie =
-      "token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
-    showToastMessage("نقش کاربری نامعتبر است. لطفاً دوباره وارد شوید.", true);
-    setTimeout(() => {
-      window.location.replace("/login");
-    }, 1500);
-  }
-}, 1500);
+        console.log("بعد از ارسال profile", profileResponse.status);
+        console.log("پاسخ پروفایل:", profileResponse);
+      } catch (err) {
+        showToastMessage("خطا در دریافت اطلاعات کاربر", true);
+        window.API.clearToken();
+        document.cookie =
+          "token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+        setFormDisabled(false);
+        if (loginBtn) loginBtn.innerHTML = "ورود";
+        return;
+      }
+
+      if (!profileResponse.ok) {
+        showToastMessage("دسترسی به پروفایل کاربر ممکن نشد", true);
+        window.API.clearToken();
+        document.cookie =
+          "token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+        setFormDisabled(false);
+        if (loginBtn) loginBtn.innerHTML = "ورود";
+        return;
+      }
+
+      const profile = await profileResponse.json();
+      const userRole = String(profile.role || "USER").toUpperCase();
+
+      showToastMessage("ورود موفق ✅", false);
+
+      setTimeout(() => {
+        const redirectUrl = ROLE_ROUTES[userRole];
+
+        if (redirectUrl) {
+          window.location.replace(redirectUrl);
+        } else {
+          window.API.clearToken();
+          document.cookie =
+            "token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+          showToastMessage(
+            "نقش کاربری نامعتبر است. لطفاً دوباره وارد شوید.",
+            true,
+          );
+          setTimeout(() => {
+            window.location.replace("/login");
+          }, 1500);
+        }
+      }, 1500);
     } catch (error) {
       console.error("❌ خطای لاگین:", error);
       showToastMessage(error.message || "خطای نامشخص در لاگین", true);
@@ -362,7 +390,6 @@ function showToastMessage(msg, isError = false) {
   }, 4000);
 }
 
-
 (function () {
   let sessionTimer = null;
 
@@ -378,8 +405,7 @@ function showToastMessage(msg, isError = false) {
 
   function logoutDueToExpiry() {
     window.API.clearToken();
-    document.cookie =
-      "token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+    document.cookie = "token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
     window.dispatchEvent(new CustomEvent("unauthorized"));
     showToastMessage("⏰ مدت زمان جلسه شما به پایان رسید.", true);
     setTimeout(() => {
@@ -418,8 +444,7 @@ function showToastMessage(msg, isError = false) {
   const originalClearToken = window.API.clearToken;
   window.API.clearToken = function () {
     originalClearToken.call(this);
-    document.cookie =
-      "token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+    document.cookie = "token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
     clearTimeout(sessionTimer);
   };
 
@@ -431,8 +456,7 @@ function showToastMessage(msg, isError = false) {
 
   window.addEventListener("unauthorized", function () {
     window.API.clearToken();
-    document.cookie =
-      "token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+    document.cookie = "token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
 
     // فقط کلیدهای مرتبط با auth پاک بشه، نه کل sessionStorage
     // (در صورت نیاز کلیدهای دیگه‌ای رو اینجا اضافه کنید)
